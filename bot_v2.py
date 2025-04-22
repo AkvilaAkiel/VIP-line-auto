@@ -1,3 +1,4 @@
+import fake_server  # Створює фейковий сервер
 import logging
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -5,6 +6,8 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
     ContextTypes
 )
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # Черга та поточний користувач
 queue = []
