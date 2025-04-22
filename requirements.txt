@@ -1,2 +1,3 @@
-python-telegram-bot==20.0
-flask==2.3.3
+python-telegram-bot[asyncio]==20.0
+Flask==2.3.3
+gunicorn==21.2.0  # для production-серверів (як на Render)
