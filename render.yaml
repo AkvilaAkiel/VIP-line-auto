@@ -7,4 +7,4 @@ services:
     startCommand: "python bot_v2.py"
     envVars:
       - key: BOT_TOKEN
-        value: false
+        sync: false
