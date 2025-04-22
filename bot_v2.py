@@ -5,6 +5,7 @@ from telegram.ext import (
     ContextTypes
 )
 import asyncio
+import os
 
 logging.basicConfig(level=logging.INFO)
 
@@ -88,12 +89,21 @@ async def notify_next(context: ContextTypes.DEFAULT_TYPE):
         await start_next_break(context)
 
 # == ГОЛОВНЕ ==
-if __name__ == "__main__":
-    import os 
+async def main():
     app = ApplicationBuilder().token(os.environ["BOT_TOKEN"]).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Бот з кнопками запущено...")
-    app.run_polling()
+    await app.bot.delete_webhook()  # на випадок попередніх налаштувань
+
+    # URL вебхука — очікується, що він в ENV як WEBHOOK_URL
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=int(os.environ.get("PORT", 8080)),
+        webhook_url=os.environ["WEBHOOK_URL"],
+    )
+
+if __name__ == "__main__":
+    print("Бот з кнопками запущено через Webhook...")
+    asyncio.run(main())
