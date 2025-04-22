@@ -98,7 +98,7 @@ async def main():
     await app.bot.delete_webhook()  # на випадок попередніх налаштувань
 
     # URL вебхука — очікується, що він в ENV як WEBHOOK_URL
-    await app.run_webhook(
+    await app.run_polling(
         listen="0.0.0.0",
         port=int(os.environ.get("PORT", 8080)),
         webhook_url=os.environ["WEBHOOK_URL"],
