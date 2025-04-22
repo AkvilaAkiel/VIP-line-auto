@@ -1,98 +1,88 @@
 import logging
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+import asyncio
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, CallbackQueryHandler,
     ContextTypes
 )
-import asyncio
 
+# Черга та поточний користувач
+queue = []
+current_user = None
+BREAK_DURATION = 600  # 10 хвилин
+
+# Логування
 logging.basicConfig(level=logging.INFO)
 
-queue = []
-active_break = None
-
-# == КНОПКИ ==
-def main_menu():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🟢 Долучитись до черги", callback_data="join")],
-        [InlineKeyboardButton("🔴 Вийти з черги", callback_data="leave")],
-        [InlineKeyboardButton("📋 Подивитись чергу", callback_data="queue")],
-    ])
-
-# == КОМАНДИ ==
+# Команди
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Привіт! Я бот для черги на перерву ⏳\nОбери дію:",
-        reply_markup=main_menu()
-    )
+    keyboard = [
+        [InlineKeyboardButton("🟢 У чергу", callback_data='join')],
+        [InlineKeyboardButton("🔚 Вийти", callback_data='leave')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("👋 Привіт! Я бот черги на перерву.", reply_markup=reply_markup)
 
-# == ОБРОБКА КНОПОК ==
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global active_break
     query = update.callback_query
     await query.answer()
-    user = query.from_user
+    if query.data == 'join':
+        await join(update, context)
+    elif query.data == 'leave':
+        await leave(update, context)
 
-    if query.data == "join":
-        if user.id in [u.id for u in queue]:
-            position = [u.id for u in queue].index(user.id) + 1
-            await query.edit_message_text(f"Ти вже в черзі. Твоє місце: {position}")
-        else:
-            queue.append(user)
-            await query.edit_message_text("Тебе додано в чергу на перерву.")
-            if active_break is None:
-                await start_next_break(context)
+async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global current_user
+    user = update.effective_user
 
-    elif query.data == "leave":
-        if user in queue:
-            queue.remove(user)
-            await query.edit_message_text("Тебе видалено з черги.")
-        elif user == active_break:
-            active_break = None
-            await query.edit_message_text("Ти вийшов з перерви достроково.")
-            await notify_next(context)
-        else:
-            await query.edit_message_text("Тебе немає в черзі.")
-    
-    elif query.data == "queue":
-        if not queue:
-            text = "Черга порожня."
-        else:
-            names = [f"{i+1}. {u.first_name}" for i, u in enumerate(queue)]
-            text = "Поточна черга:\n" + "\n".join(names)
-        await query.edit_message_text(text, reply_markup=main_menu())
+    if user.id in [u.id for u in queue] or (current_user and current_user.id == user.id):
+        await context.bot.send_message(chat_id=user.id, text="⏳ Ви вже у черзі або на перерві.")
+        return
 
-# == ЛОГІКА ПЕРЕРВИ ==
-async def start_next_break(context: ContextTypes.DEFAULT_TYPE):
-    global active_break
+    queue.append(user)
+    await context.bot.send_message(chat_id=user.id, text="✅ Ви додані до черги.")
+
+    if not current_user:
+        await start_break(context)
+
+async def leave(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global current_user
+    user = update.effective_user
+
+    if current_user and user.id == current_user.id:
+        current_user = None
+        await context.bot.send_message(chat_id=user.id, text="❌ Ви вийшли з перерви.")
+        await start_break(context)
+        return
+
+    for u in queue:
+        if u.id == user.id:
+            queue.remove(u)
+            await context.bot.send_message(chat_id=user.id, text="❌ Ви вийшли з черги.")
+            return
+
+    await context.bot.send_message(chat_id=user.id, text="🤷‍♂️ Вас немає в черзі.")
+
+async def start_break(context: ContextTypes.DEFAULT_TYPE):
+    global current_user
     if not queue:
         return
 
-    active_break = queue.pop(0)
-    chat_id = active_break.id
+    current_user = queue.pop(0)
+    await context.bot.send_message(chat_id=current_user.id, text="🚨 Ваша черга на перерву! 10 хвилин ⏱")
+    await asyncio.sleep(BREAK_DURATION)
+    await context.bot.send_message(chat_id=current_user.id, text="⏰ Перерва закінчилась!")
+    current_user = None
+    await start_break(context)
 
-    await context.bot.send_message(chat_id=chat_id, text="🟢 Твоя черга! Почалась перерва на 10 хвилин ⏳")
-
-    await asyncio.sleep(9 * 60)
-    await context.bot.send_message(chat_id=chat_id, text="⚠️ Залишилась 1 хвилина до завершення перерви.")
-
-    await asyncio.sleep(60)
-    await context.bot.send_message(chat_id=chat_id, text="🔚 Твоя перерва завершена.")
-    active_break = None
-    await notify_next(context)
-
-async def notify_next(context: ContextTypes.DEFAULT_TYPE):
-    if queue:
-        next_user = queue[0]
-        await context.bot.send_message(chat_id=next_user.id, text="🔔 Ти наступний на перерву!")
-        await start_next_break(context)
-
-# == ГОЛОВНЕ ==
-if __name__ == "__main__":
-    app = ApplicationBuilder().token("7246928591:AAGeGrPG2C8Yt08-hxiz8cKTOgJUslT83GU").build()
+# Запуск
+if __name__ == '__main__':
+    import os
+    TOKEN = os.getenv("BOT_TOKEN")
+    app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("Бот з кнопками запущено...")
+    print("🤖 Бот запущено...")
     app.run_polling()
