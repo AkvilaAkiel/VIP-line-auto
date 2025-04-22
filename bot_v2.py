@@ -1,4 +1,3 @@
-import fake_server  # Створює фейковий сервер
 import logging
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
