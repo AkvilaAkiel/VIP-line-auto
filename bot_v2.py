@@ -98,12 +98,17 @@ application = None  # буде створено асинхронно
 def index():
     return 'Бот працює!'
 
+# Новий асинхронний обробник для webhook
 @flask_app.route(f"/{os.getenv('BOT_TOKEN')}", methods=["POST"])
-async def webhook_handler():
-    data = await request.get_data()
-    update = Update.de_json(data.decode("utf-8"), application.bot)
-    await application.process_update(update)
-    return 'OK'
+async def webhook():
+    if request.method == "POST":
+        try:
+            data = await request.get_data()
+            update = Update.de_json(data.decode("utf-8"), application.bot)
+            asyncio.create_task(application.process_update(update))
+        except Exception as e:
+            logging.error("Exception while handling the update:", exc_info=e)
+        return "ok", 200
 
 def run_flask():
     flask_app.run(host="0.0.0.0", port=5000)
