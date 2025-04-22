@@ -34,9 +34,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user = query.from_user
 
+    user_ids = [u.id for u in queue]
+
     if query.data == "join":
-        if user.id in [u.id for u in queue]:
-            position = [u.id for u in queue].index(user.id) + 1
+        if user.id == (active_break.id if active_break else None):
+            await query.edit_message_text("Ти вже на перерві!")
+        elif user.id in user_ids:
+            position = user_ids.index(user.id) + 1
             await query.edit_message_text(f"Ти вже в черзі. Твоє місце: {position}")
         else:
             queue.append(user)
@@ -45,16 +49,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await start_next_break(context)
 
     elif query.data == "leave":
-        if user in queue:
-            queue.remove(user)
-            await query.edit_message_text("Тебе видалено з черги.")
-        elif user == active_break:
+        if user.id == (active_break.id if active_break else None):
             active_break = None
             await query.edit_message_text("Ти вийшов з перерви достроково.")
             await notify_next(context)
+        elif user.id in user_ids:
+            queue[:] = [u for u in queue if u.id != user.id]
+            await query.edit_message_text("Тебе видалено з черги.")
         else:
             await query.edit_message_text("Тебе немає в черзі.")
-    
+
     elif query.data == "queue":
         if not queue:
             text = "Черга порожня."
@@ -66,7 +70,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # == ПЕРЕРВА ==
 async def start_next_break(context: ContextTypes.DEFAULT_TYPE):
     global active_break
-    if not queue:
+    if not queue or active_break is not None:
         return
 
     active_break = queue.pop(0)
