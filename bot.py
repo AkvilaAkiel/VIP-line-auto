@@ -89,7 +89,7 @@ async def process_break_request(callback_query: types.CallbackQuery):
         queue.append(user_id)
         await callback_query.message.answer(
             f"{user_name}, ты добавлен в очередь! Позиция: {len(queue)}",
-            reply_markup=break_button  # Кнопка остаётся для тех, кто в очереди
+            # reply_markup=break_button  # Кнопка остаётся для тех, кто в очереди
         )
         logging.info(f"{user_name} (ID: {user_id}) добавлен в очередь, позиция: {len(queue)}")
 
