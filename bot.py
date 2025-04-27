@@ -37,6 +37,26 @@ async def send_welcome(message: types.Message):
         reply_markup=break_button
     )
 
+# Обработчик команды /queue
+@dp.message_handler(commands=['queue'])
+async def show_queue(message: types.Message):
+    if not queue:
+        await message.reply("Очередь пуста!")
+        logging.info("Команда /queue: очередь пуста")
+    else:
+        queue_list = []
+        for i, user_id in enumerate(queue):
+            try:
+                user = await bot.get_chat_member(chat_id=message.chat.id, user_id=user_id)
+                user_name = user.user.first_name or user.user.username or str(user_id)
+                queue_list.append(f"{i+1}. {user_name}")
+            except Exception as e:
+                queue_list.append(f"{i+1}. User ID: {user_id} (ошибка получения имени)")
+                logging.error(f"Ошибка при получении имени для user_id {user_id}: {str(e)}")
+        queue_text = "\n".join(queue_list)
+        await message.reply(f"Текущая очередь:\n{queue_text}")
+        logging.info(f"Команда /queue: показана очередь\n{queue_text}")
+
 # Обработчик нажатия на кнопку "На перерыв"
 @dp.callback_query_handler(lambda c: c.data == "go_break")
 async def process_break_request(callback_query: types.CallbackQuery):
@@ -58,8 +78,8 @@ async def process_break_request(callback_query: types.CallbackQuery):
     if not queue and current_break_user is None:
         current_break_user = user_id
         await callback_query.message.answer(
-            f"{user_name}, ты пошел на перерыв! У тебя 10 минут.",
-            reply_markup=break_button
+            f"{user_name}, ты пошел на перерыв! У тебя 10 минут."
+            # Убрали reply_markup=break_button, чтобы не дублировать кнопку
         )
         logging.info(f"{user_name} (ID: {user_id}) начал перерыв")
         # Запускаем таймер на 10 минут
@@ -69,7 +89,7 @@ async def process_break_request(callback_query: types.CallbackQuery):
         queue.append(user_id)
         await callback_query.message.answer(
             f"{user_name}, ты добавлен в очередь! Позиция: {len(queue)}",
-            reply_markup=break_button
+            reply_markup=break_button  # Кнопка остаётся для тех, кто в очереди
         )
         logging.info(f"{user_name} (ID: {user_id}) добавлен в очередь, позиция: {len(queue)}")
 
@@ -77,34 +97,37 @@ async def process_break_request(callback_query: types.CallbackQuery):
 
 # Функция для обработки таймера перерыва
 async def break_timer(user_id, user_name):
-    await asyncio.sleep(break_duration)  # Ждём 10 минут
-    global current_break_user, queue  # Объявляем global в начале
+    try:
+        await asyncio.sleep(break_duration)  # Ждём 10 минут
+        global current_break_user, queue
 
-    # Уведомляем пользователя, что его перерыв закончился
-    await bot.send_message(
-        user_id,
-        f"{user_name}, твой перерыв окончен!"
-    )
-    logging.info(f"{user_name} (ID: {user_id}) завершил перерыв")
-
-    # Если есть люди в очереди, запускаем перерыв для следующего
-    if queue:
-        next_user_id = queue.popleft()
-        next_user = await bot.get_chat_member(chat_id=next_user_id, user_id=next_user_id)
-        next_user_name = next_user.user.first_name or next_user.user.username or str(next_user_id)
-        current_break_user = next_user_id
+        # Уведомляем пользователя, что его перерыв закончился
         await bot.send_message(
-            next_user_id,
-            f"{next_user_name}, твоя очередь! Ты пошел на перерыв (10 минут).",
-            reply_markup=break_button
+            user_id,
+            f"{user_name}, твой перерыв окончен!"
         )
-        logging.info(f"{next_user_name} (ID: {next_user_id}) начал перерыв")
-        # Запускаем таймер для следующего пользователя
-        asyncio.create_task(break_timer(next_user_id, next_user_name))
-    else:
-        # Если очереди нет, сбрасываем текущего пользователя
-        current_break_user = None
-        logging.info("Очередь пуста, перерыв завершён")
+        logging.info(f"{user_name} (ID: {user_id}) завершил перерыв")
+
+        # Если есть люди в очереди, запускаем перерыв для следующего
+        if queue:
+            next_user_id = queue.popleft()
+            next_user = await bot.get_chat_member(chat_id=next_user_id, user_id=next_user_id)
+            next_user_name = next_user.user.first_name or next_user.user.username or str(next_user_id)
+            current_break_user = next_user_id
+            await bot.send_message(
+                next_user_id,
+                f"{next_user_name}, твоя очередь! Ты пошел на перерыв (10 минут)."
+                # Убрали reply_markup=break_button
+            )
+            logging.info(f"{next_user_name} (ID: {next_user_id}) начал перерыв")
+            # Запускаем таймер для следующего пользователя
+            asyncio.create_task(break_timer(next_user_id, next_user_name))
+        else:
+            # Если очереди нет, сбрасываем текущего пользователя
+            current_break_user = None
+            logging.info("Очередь пуста, перерыв завершён")
+    except Exception as e:
+        logging.error(f"Ошибка в break_timer для {user_name} (ID: {user_id}): {str(e)}")
 
 # Настройка Webhook при запуске
 async def on_startup(_):
