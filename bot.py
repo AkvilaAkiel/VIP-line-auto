@@ -23,11 +23,15 @@ dp = Dispatcher(bot)
 # Глобальные переменные
 queue = deque()  # Очередь пользователей (хранит user_id)
 current_break_user = None  # Текущий пользователь на перерыве (user_id)
+pending_break_user = None  # Пользователь, ожидающий подтверждения перерыва (user_id)
 break_duration = 600  # 10 минут в секундах
 
-# Создаём инлайн-кнопку "На перерыв"
+# Создаём инлайн-кнопки
 break_button = InlineKeyboardMarkup()
 break_button.add(InlineKeyboardButton("На перерыв", callback_data="go_break"))
+
+start_break_button = InlineKeyboardMarkup()
+start_break_button.add(InlineKeyboardButton("Начать перерыв", callback_data="start_break"))
 
 # Обработчик команды /start
 @dp.message_handler(commands=['start'])
@@ -40,33 +44,45 @@ async def send_welcome(message: types.Message):
 # Обработчик команды /queue
 @dp.message_handler(commands=['queue'])
 async def show_queue(message: types.Message):
-    if not queue:
-        await message.reply("Очередь пуста!")
-        logging.info("Команда /queue: очередь пуста")
-    else:
-        queue_list = []
+    queue_text = []
+    if pending_break_user:
+        try:
+            user = await bot.get_chat_member(chat_id=message.chat.id, user_id=pending_break_user)
+            user_name = user.user.first_name or user.user.username or str(pending_break_user)
+            queue_text.append(f"Ожидает подтверждения: {user_name}")
+        except Exception as e:
+            queue_text.append(f"Ожидает подтверждения: User ID: {pending_break_user} (ошибка получения имени)")
+            logging.error(f"Ошибка при получении имени для pending_break_user {pending_break_user}: {str(e)}")
+    if queue:
         for i, user_id in enumerate(queue):
             try:
                 user = await bot.get_chat_member(chat_id=message.chat.id, user_id=user_id)
                 user_name = user.user.first_name or user.user.username or str(user_id)
-                queue_list.append(f"{i+1}. {user_name}")
+                queue_text.append(f"{i+1}. {user_name}")
             except Exception as e:
-                queue_list.append(f"{i+1}. User ID: {user_id} (ошибка получения имени)")
+                queue_text.append(f"{i+1}. User ID: {user_id} (ошибка получения имени)")
                 logging.error(f"Ошибка при получении имени для user_id {user_id}: {str(e)}")
-        queue_text = "\n".join(queue_list)
-        await message.reply(f"Текущая очередь:\n{queue_text}")
-        logging.info(f"Команда /queue: показана очередь\n{queue_text}")
+    if not queue_text:
+        await message.reply("Очередь пуста!")
+        logging.info("Команда /queue: очередь пуста")
+    else:
+        await message.reply(f"Текущая очередь:\n" + "\n".join(queue_text))
+        logging.info(f"Команда /queue: показана очередь\n" + "\n".join(queue_text))
 
 # Обработчик нажатия на кнопку "На перерыв"
 @dp.callback_query_handler(lambda c: c.data == "go_break")
 async def process_break_request(callback_query: types.CallbackQuery):
-    global current_break_user, queue  # Объявляем global в начале функции
+    global current_break_user, pending_break_user, queue
     user_id = callback_query.from_user.id
     user_name = callback_query.from_user.first_name or callback_query.from_user.username or str(user_id)
 
-    # Проверка, находится ли пользователь уже на перерыве или в очереди
+    # Проверка, находится ли пользователь на перерыве или ожидает подтверждения
     if user_id == current_break_user:
         await callback_query.message.answer(f"{user_name}, ты уже на перерыве!")
+        await callback_query.answer()
+        return
+    if user_id == pending_break_user:
+        await callback_query.message.answer(f"{user_name}, твоя очередь! Нажми 'Начать перерыв', когда будешь готов.")
         await callback_query.answer()
         return
     if user_id in queue:
@@ -74,24 +90,44 @@ async def process_break_request(callback_query: types.CallbackQuery):
         await callback_query.answer()
         return
 
-    # Если очередь пуста и никто не на перерыве
-    if not queue and current_break_user is None:
+    # Если очередь пуста, нет текущего перерыва и нет ожидающего подтверждения
+    if not queue and current_break_user is None and pending_break_user is None:
         current_break_user = user_id
         await callback_query.message.answer(
             f"{user_name}, ты пошел на перерыв! У тебя 10 минут."
-            # Убрали reply_markup=break_button, чтобы не дублировать кнопку
         )
         logging.info(f"{user_name} (ID: {user_id}) начал перерыв")
-        # Запускаем таймер на 10 минут
         asyncio.create_task(break_timer(user_id, user_name))
     else:
         # Добавляем пользователя в очередь
         queue.append(user_id)
         await callback_query.message.answer(
             f"{user_name}, ты добавлен в очередь! Позиция: {len(queue)}",
-            # reply_markup=break_button  # Кнопка остаётся для тех, кто в очереди
+            reply_markup=break_button
         )
         logging.info(f"{user_name} (ID: {user_id}) добавлен в очередь, позиция: {len(queue)}")
+
+    await callback_query.answer()
+
+# Обработчик нажатия на кнопку "Начать перерыв"
+@dp.callback_query_handler(lambda c: c.data == "start_break")
+async def start_break(callback_query: types.CallbackQuery):
+    global current_break_user, pending_break_user
+    user_id = callback_query.from_user.id
+    user_name = callback_query.from_user.first_name or callback_query.from_user.username or str(user_id)
+
+    # Проверяем, является ли пользователь ожидающим подтверждения
+    if user_id == pending_break_user:
+        current_break_user = user_id
+        pending_break_user = None
+        await callback_query.message.answer(
+            f"{user_name}, ты пошел на перерыв! У тебя 10 минут."
+        )
+        logging.info(f"{user_name} (ID: {user_id}) начал перерыв")
+        asyncio.create_task(break_timer(user_id, user_name))
+    else:
+        await callback_query.message.answer(f"{user_name}, это не твоя очередь!")
+        logging.info(f"{user_name} (ID: {user_id}) пытался начать перерыв не в свою очередь")
 
     await callback_query.answer()
 
@@ -99,7 +135,7 @@ async def process_break_request(callback_query: types.CallbackQuery):
 async def break_timer(user_id, user_name):
     try:
         await asyncio.sleep(break_duration)  # Ждём 10 минут
-        global current_break_user, queue
+        global current_break_user, pending_break_user, queue
 
         # Уведомляем пользователя, что его перерыв закончился
         await bot.send_message(
@@ -108,24 +144,23 @@ async def break_timer(user_id, user_name):
         )
         logging.info(f"{user_name} (ID: {user_id}) завершил перерыв")
 
-        # Если есть люди в очереди, запускаем перерыв для следующего
+        # Если есть люди в очереди, уведомляем следующего
         if queue:
             next_user_id = queue.popleft()
             next_user = await bot.get_chat_member(chat_id=next_user_id, user_id=next_user_id)
             next_user_name = next_user.user.first_name or next_user.user.username or str(next_user_id)
-            current_break_user = next_user_id
+            pending_break_user = next_user_id
             await bot.send_message(
                 next_user_id,
-                f"{next_user_name}, твоя очередь! Ты пошел на перерыв (10 минут)."
-                # Убрали reply_markup=break_button
+                f"{next_user_name}, твоя очередь на перерыв! Нажми 'Начать перерыв', когда будешь готов.",
+                reply_markup=start_break_button
             )
-            logging.info(f"{next_user_name} (ID: {next_user_id}) начал перерыв")
-            # Запускаем таймер для следующего пользователя
-            asyncio.create_task(break_timer(next_user_id, next_user_name))
+            logging.info(f"{next_user_name} (ID: {next_user_id}) уведомлён о своей очереди")
         else:
             # Если очереди нет, сбрасываем текущего пользователя
             current_break_user = None
             logging.info("Очередь пуста, перерыв завершён")
+
     except Exception as e:
         logging.error(f"Ошибка в break_timer для {user_name} (ID: {user_id}): {str(e)}")
 
