@@ -1,17 +1,23 @@
-from aiogram import Bot, Dispatcher, executor, types
+from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils import executor
+from aiohttp import web
 import asyncio
 from collections import deque
+import os
 
-# Замените на ваш токен от @BotFather
-API_TOKEN = 'ВАШ_ТОКЕН'
+# Токен и URL для Webhook
+API_TOKEN = os.getenv('API_TOKEN', 'ВАШ_ТОКЕН')  # Токен берется из переменной окружения
+WEBHOOK_PATH = '/webhook'  # Путь для Webhook
+WEBHOOK_HOST = os.getenv('WEBHOOK_HOST', 'https://ВАШ_URL.onrender.com')  # URL от Render
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 # Инициализация бота и диспетчера
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
 
 # Переменные для управления очередью и перерывами
-queue = deque()  # Очередь пользователей (хранит user_id)
+queue = deque()  # Оч queue = deque()  # Очередь пользователей (хранит user_id)
 current_break_user = None  # Текущий пользователь на перерыве (user_id)
 break_duration = 600  # 10 минут в секундах
 
@@ -91,6 +97,30 @@ async def break_timer(user_id, user_name):
         # Если очереди нет, сбрасываем текущего пользователя
         current_break_user = None
 
+# Настройка Webhook при запуске
+async def on_startup(_):
+    # Устанавливаем Webhook
+    await bot.set_webhook(url=WEBHOOK_URL)
+    print(f"Webhook установлен: {WEBHOOK_URL}")
+
+# Обработчик входящих обновлений через Webhook
+async def webhook(request):
+    update = await request.json()
+    update = types.Update(**update)
+    await dp.process_update(update)
+    return web.Response()
+
+# Создание aiohttp сервера
+app = web.Application()
+app.router.add_post(WEBHOOK_PATH, webhook)
+
 # Запуск бота
 if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+    executor.start_webhook(
+        dispatcher=dp,
+        webhook_path=WEBHOOK_PATH,
+        on_startup=on_startup,
+        skip_updates=True,
+        host='0.0.0.0',
+        port=int(os.getenv('PORT', 8000))
+    )
