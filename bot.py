@@ -131,8 +131,13 @@ async def break_timer(user_id, user_name):
 
 # Настройка Webhook при запуске
 async def on_startup(_):
-    await bot.set_webhook(url=WEBHOOK_URL)
-    logging.info(f"Webhook установлен: {WEBHOOK_URL}")
+    # Проверяем и устанавливаем Webhook
+    webhook_info = await bot.get_webhook_info()
+    if webhook_info.url != WEBHOOK_URL:
+        await bot.set_webhook(url=WEBHOOK_URL)
+        logging.info(f"Webhook установлен: {WEBHOOK_URL}")
+    else:
+        logging.info(f"Webhook уже установлен: {WEBHOOK_URL}")
 
 # Обработчик входящих обновлений через Webhook
 async def webhook(request):
