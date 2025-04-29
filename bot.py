@@ -56,14 +56,26 @@ async def send_welcome(message: types.Message):
 # Обработчик команды /queue
 @dp.message_handler(commands=['queue'])
 async def show_queue(message: types.Message):
+    if message.chat.id != GROUP_CHAT_ID:
+        await message.reply("Этот бот работает только в определённой группе!")
+        logging.info(f"Попытка /queue в неверном чате {message.chat.id}")
+        return
     queue_text = []
+    if current_break_user:  # Добавляем текущего человека на перерыве
+        try:
+            user = await bot.get_chat_member(chat_id=GROUP_CHAT_ID, user_id=current_break_user)
+            user_name = user.user.first_name or user.user.username or str(current_break_user)
+            queue_text.append(f"На перерві: {get_clickable_name(current_break_user, user_name)}")
+        except Exception as e:
+            queue_text.append(f"На перерві: User ID: {current_break_user} (помилка при отриманні імені)")
+            logging.error(f"Помилка при отриманні імені для current_break_user {current_break_user}: {str(e)}")
     if pending_break_user:
         try:
             user = await bot.get_chat_member(chat_id=GROUP_CHAT_ID, user_id=pending_break_user)
             user_name = user.user.first_name or user.user.username or str(pending_break_user)
             queue_text.append(f"Очікує підтвердження: {get_clickable_name(pending_break_user, user_name)}")
         except Exception as e:
-            queue_text.append(f"Очікує підтвердження: User ID: {pending_break_user} (помилка отримання імені)")
+            queue_text.append(f"Очікує підтвердження: User ID: {pending_break_user} (ошибка получения имени)")
             logging.error(f"Помилка при отриманні імені для pending_break_user {pending_break_user}: {str(e)}")
     if queue:
         for i, user_id in enumerate(queue):
@@ -72,13 +84,13 @@ async def show_queue(message: types.Message):
                 user_name = user.user.first_name or user.user.username or str(user_id)
                 queue_text.append(f"{i+1}. {get_clickable_name(user_id, user_name)}")
             except Exception as e:
-                queue_text.append(f"{i+1}. User ID: {user_id} (помилка отримання імені)")
-                logging.error(f"Помилка при отриманні імені для user_id {user_id}: {str(e)}")
-    if not queue_text and current_break_user == None:
+                queue_text.append(f"{i+1}. User ID: {user_id} (ошибка получения имени)")
+                logging.error(f"Помилка при отриманні імені для для user_id {user_id}: {str(e)}")
+    if not queue_text:
         await message.reply("Нікого в черзі!")
         logging.info(f"Команда /queue в группе {GROUP_CHAT_ID}: нікого в черзі")
     else:
-        await message.reply(f"{current_break_user} зараз на перерві. Поточна черга:\n" + "\n".join(queue_text), parse_mode="HTML")
+        await message.reply(f"Поточна черга:\n" + "\n".join(queue_text), parse_mode="HTML")
         logging.info(f"Команда /queue в группе {GROUP_CHAT_ID}: показана черга\n" + "\n".join(queue_text))
 
 # Обработчик нажатия на кнопку "На перерыв"
