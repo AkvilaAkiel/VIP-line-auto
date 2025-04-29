@@ -75,6 +75,7 @@ async def process_break_request(callback_query: types.CallbackQuery):
     global current_break_user, pending_break_user, queue
     user_id = callback_query.from_user.id
     user_name = callback_query.from_user.first_name or callback_query.from_user.username or str(user_id)
+    chat_id = callback_query.message.chat.id  # Сохраняем chat_id группы
 
     # Проверка, находится ли пользователь на перерыве или ожидает подтверждения
     if user_id == current_break_user:
@@ -97,7 +98,7 @@ async def process_break_request(callback_query: types.CallbackQuery):
             f"{user_name}, на перерву! У тебе 10 хвилин."
         )
         logging.info(f"{user_name} (ID: {user_id}) почав(-ла) перерву")
-        asyncio.create_task(break_timer(user_id, user_name))
+        asyncio.create_task(break_timer(user_id, user_name, chat_id))  # Передаём chat_id
     else:
         # Добавляем пользователя в очередь
         queue.append(user_id)
@@ -115,6 +116,7 @@ async def start_break(callback_query: types.CallbackQuery):
     global current_break_user, pending_break_user
     user_id = callback_query.from_user.id
     user_name = callback_query.from_user.first_name or callback_query.from_user.username or str(user_id)
+    chat_id = callback_query.message.chat.id  # Сохраняем chat_id группы
 
     # Проверяем, является ли пользователь ожидающим подтверждения
     if user_id == pending_break_user:
@@ -124,7 +126,7 @@ async def start_break(callback_query: types.CallbackQuery):
             f"{user_name}, на перерву! У тебе 10 хвилин."
         )
         logging.info(f"{user_name} (ID: {user_id}) почав перерву")
-        asyncio.create_task(break_timer(user_id, user_name))
+        asyncio.create_task(break_timer(user_id, user_name, chat_id))  # Передаём chat_id
     else:
         await callback_query.message.answer(f"{user_name}, це не твоя черга!")
         logging.info(f"{user_name} (ID: {user_id}) намагався(-лась) почати перерву не в свою чергу.")
@@ -132,17 +134,17 @@ async def start_break(callback_query: types.CallbackQuery):
     await callback_query.answer()
 
 # Функция для обработки таймера перерыва
-async def break_timer(user_id, user_name):
+async def break_timer(user_id, user_name, chat_id):
     try:
         await asyncio.sleep(break_duration)  # Ждём 10 минут
         global current_break_user, pending_break_user, queue
 
         # Уведомляем пользователя, что его перерыв закончился
         await bot.send_message(
-            user_id,
+            chat_id,
             f"{user_name}, кінець перерви!"
         )
-        logging.info(f"{user_name} (ID: {user_id}) завершив перерву")
+        logging.info(f"{user_name} (ID: {user_id}) завершив перерву в групі {chat_id}")
 
         # Если есть люди в очереди, уведомляем следующего
         if queue:
