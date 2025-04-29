@@ -77,7 +77,7 @@ async def show_queue(message: types.Message):
     if not queue_text & current_break_user == "":
         await message.reply("Нікого в черзі!")
         logging.info(f"Команда /queue в группе {GROUP_CHAT_ID}: нікого в черзі")
-    else if current_break_user == user_id:
+    else if: current_break_user == user_id:
          await message.reply(f"Зараз на перерві:\n" + "\n".join(current_break_user), parse_mode="HTML")
     else:
         await message.reply(f"Поточна черга:\n" + "\n".join(queue_text), parse_mode="HTML")
