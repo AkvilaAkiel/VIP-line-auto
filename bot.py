@@ -74,7 +74,7 @@ async def show_queue(message: types.Message):
             except Exception as e:
                 queue_text.append(f"{i+1}. User ID: {user_id} (помилка отримання імені)")
                 logging.error(f"Помилка при отриманні імені для user_id {user_id}: {str(e)}")
-    if not queue_text & current_break_user == "":
+    if not queue_text and current_break_user == None:
         await message.reply("Нікого в черзі!")
         logging.info(f"Команда /queue в группе {GROUP_CHAT_ID}: нікого в черзі")
     elif current_break_user == user_id:
