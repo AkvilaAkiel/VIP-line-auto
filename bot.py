@@ -47,10 +47,6 @@ def get_clickable_name(user_id, user_name):
 # Обработчик команды /start
 @dp.message_handler(commands=['start'])
 async def send_welcome(message: types.Message):
-    if message.chat.id != GROUP_CHAT_ID:
-        await message.reply("Этот бот работает только в определённой группе!")
-        logging.info(f"Попытка /start в неверном чате {message.chat.id}")
-        return
     await message.reply(
         "Привет! Я бот для управления перерывами в группе. Нажми кнопку ниже, чтобы встать в очередь на перерыв.",
         reply_markup=break_button
@@ -60,10 +56,6 @@ async def send_welcome(message: types.Message):
 # Обработчик команды /queue
 @dp.message_handler(commands=['queue'])
 async def show_queue(message: types.Message):
-    if message.chat.id != GROUP_CHAT_ID:
-        await message.reply("Этот бот работает только в определённой группе!")
-        logging.info(f"Попытка /queue в неверном чате {message.chat.id}")
-        return
     queue_text = []
     if pending_break_user:
         try:
@@ -133,12 +125,6 @@ async def process_break_request(callback_query: types.CallbackQuery):
 # Обработчик нажатия на кнопку "Начать перерыв"
 @dp.callback_query_handler(lambda c: c.data == "start_break")
 async def start_break(callback_query: types.CallbackQuery):
-    if callback_query.message.chat.id != GROUP_CHAT_ID:
-        await callback_query.message.answer("Этот бот работает только в определённой группе!")
-        await callback_query.answer()
-        logging.info(f"Попытка нажатия 'Начать перерыв' в неверном чате {callback_query.message.chat.id}")
-        return
-
     global current_break_user, pending_break_user
     user_id = callback_query.from_user.id
     user_name = callback_query.from_user.first_name or callback_query.from_user.username or str(user_id)
