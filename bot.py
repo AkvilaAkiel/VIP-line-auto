@@ -92,12 +92,6 @@ async def show_queue(message: types.Message):
 # Обработчик нажатия на кнопку "На перерыв"
 @dp.callback_query_handler(lambda c: c.data == "go_break")
 async def process_break_request(callback_query: types.CallbackQuery):
-    if callback_query.message.chat.id != GROUP_CHAT_ID:
-        await callback_query.message.answer("Этот бот работает только в определённой группе!")
-        await callback_query.answer()
-        logging.info(f"Попытка нажатия 'На перерыв' в неверном чате {callback_query.message.chat.id}")
-        return
-
     global current_break_user, pending_break_user, queue
     user_id = callback_query.from_user.id
     user_name = callback_query.from_user.first_name or callback_query.from_user.username or str(user_id)
