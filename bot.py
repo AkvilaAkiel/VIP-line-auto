@@ -78,7 +78,7 @@ async def show_queue(message: types.Message):
         await message.reply("Нікого в черзі!")
         logging.info(f"Команда /queue в группе {GROUP_CHAT_ID}: нікого в черзі")
     elif current_break_user != None:
-         await message.reply(f"Зараз на перерві:\n" + "\n".join(current_break_user), parse_mode="HTML")
+         await message.reply("Зараз на перерві перебуває одна людина.")
     else:
         await message.reply(f"Поточна черга:\n" + "\n".join(queue_text), parse_mode="HTML")
         logging.info(f"Команда /queue в группе {GROUP_CHAT_ID}: показана черга\n" + "\n".join(queue_text))
