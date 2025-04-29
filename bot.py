@@ -77,10 +77,8 @@ async def show_queue(message: types.Message):
     if not queue_text and current_break_user == None:
         await message.reply("Нікого в черзі!")
         logging.info(f"Команда /queue в группе {GROUP_CHAT_ID}: нікого в черзі")
-    elif current_break_user != None:
-         await message.reply("Зараз на перерві перебуває одна людина.")
     else:
-        await message.reply(f"Поточна черга:\n" + "\n".join(queue_text), parse_mode="HTML")
+        await message.reply(f"{current_break_user} зараз на перерві. Поточна черга:\n" + "\n".join(queue_text), parse_mode="HTML")
         logging.info(f"Команда /queue в группе {GROUP_CHAT_ID}: показана черга\n" + "\n".join(queue_text))
 
 # Обработчик нажатия на кнопку "На перерыв"
