@@ -93,6 +93,75 @@ async def show_queue(message: types.Message):
         await message.reply(f"Поточна черга:\n" + "\n".join(queue_text), parse_mode="HTML")
         logging.info(f"Команда /queue в группе {GROUP_CHAT_ID}: показана черга\n" + "\n".join(queue_text))
 
+# Обробник команди виходу з черги /cancel
+@dp.message_handler(commands=['cancel'])
+async def cancel_break(message: types.Message):
+    global current_break_user, pending_break_user, queue
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name or message.from_user.username or str(user_id)
+    clickable_name = get_clickable_name(user_id, user_name)
+    if user_id == current_break_user:
+        current_break_user = None
+        await message.reply(f"{clickable_name}, твою перерву скасовано!", parse_mode="HTML")
+        logging.info(f"{user_name} (ID: {user_id}) перерву скасовано")
+    elif user_id == pending_break_user:
+        pending_break_user = None
+        await message.reply(f"{clickable_name}, ти відмовився від перерви.", parse_mode="HTML")
+        logging.info(f"{user_name} (ID: {user_id}) відмовився від очікування перерви")
+    elif user_id in queue:
+        queue.remove(user_id)
+        await message.reply(f"{clickable_name} 🚪, тебе видалено з черги!", parse_mode="HTML")  # /cancel
+        logging.info(f"{user_name} (ID: {user_id}) видалено з черги")
+    else:
+        await message.reply(f"{clickable_name}, ти не на перерві, не у черзі й не очікуєш підтвердження!", parse_mode="HTML")
+        
+# Обробник команди обміну чергою /swap
+@dp.message_handler(commands=['swap'])
+    initiator_id = message.from_user.id
+    initiator_name = message.from_user.first_name or message.from_user.username or str(initiator_id)
+    if initiator_id not in queue:
+        await message.reply(f"{get_clickable_name(initiator_id, initiator_name)}, ти не в черзі!", parse_mode="HTML")
+        return
+    try:
+        target_username = message.text.split()[1].lstrip('@')
+        target_user = None
+        chat_members = await bot.get_chat_administrators(chat_id=GROUP_CHAT_ID)  # Проверяем админов
+        for member in chat_members:
+            if member.user.username == target_username:
+                target_user = member
+                break
+        if not target_user:
+            chat_members = await bot.get_chat_members(chat_id=GROUP_CHAT_ID)  # Проверяем всех участников
+            for member in chat_members:
+                if member.user.username == target_username:
+                    target_user = member
+                    break
+        if not target_user:
+            await message.reply(f"Користувач @{target_username} не знайдений у групі!")
+            return
+        target_id = target_user.user.id
+        target_name = target_user.user.first_name or target_user.user.username or str(target_id)
+        if target_id not in queue:
+            await message.reply(f"{get_clickable_name(target_id, target_name)}, не у черзі!", parse_mode="HTML")
+            return
+        if initiator_id == target_id:
+            await message.reply(f"{get_clickable_name(initiator_id, initiator_name)}, неможливо мінятися з самим собою!", parse_mode="HTML")
+            return
+        initiator_idx = list(queue).index(initiator_id)
+        target_idx = list(queue).index(target_id)
+        queue[initiator_idx], queue[target_idx] = queue[target_idx], queue[initiator_idx]
+        await message.reply(
+            f"{get_clickable_name(initiator_id, initiator_name)} 🔄 "
+            f"{get_clickable_name(target_id, target_name)} помінялись місцями у черзі!",
+            parse_mode="HTML"
+        )
+        logging.info(f"{initiator_name} (ID: {initiator_id}) и {target_name} (ID: {target_id}) помінялись місцями")
+    except IndexError:
+        await message.reply("Вкажи username! Приклад: /swap @username")
+    except Exception as e:
+        await message.reply("Помилка при обміні місцями. Спробуй знову!")
+        logging.error(f"Помилка в /swap для {initiator_name} (ID: {initiator_id}): {str(e)}")
+
 # Обработчик нажатия на кнопку "На перерыв"
 @dp.callback_query_handler(lambda c: c.data == "go_break")
 async def process_break_request(callback_query: types.CallbackQuery):
