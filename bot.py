@@ -115,62 +115,6 @@ async def cancel_break(message: types.Message):
     else:
         await message.reply(f"{clickable_name}, ти не на перерві, не у черзі й не очікуєш підтвердження!", parse_mode="HTML")
         
-# Обработчик команды /swap
-@dp.message_handler(commands=['swap'])
-async def swap_queue_position(message: types.Message):
-    if message.chat.id != GROUP_CHAT_ID:
-        await message.reply("Этот бот работает только в определённой группе!")
-        return
-    initiator_id = message.from_user.id
-    initiator_name = message.from_user.first_name or message.from_user.username or str(initiator_id)
-    initiator_clickable = get_clickable_name(initiator_id, initiator_name)
-    if initiator_id not in queue:
-        await message.reply(f"{initiator_clickable}, ты не в очереди!", parse_mode="HTML")
-        return
-    if not message.entities:
-        await message.reply("Укажи пользователя через @username! Пример: /swap @User")
-        return
-    target_id = None
-    target_name = None
-    for entity in message.entities:
-        if entity.type in ["mention", "text_mention"]:
-            if entity.type == "text_mention":
-                target_id = entity.user.id
-                target_name = entity.user.first_name or entity.user.username or str(target_id)
-            elif entity.type == "mention":
-                username = message.text[entity.offset:entity.offset + entity.length].lstrip('@')
-                try:
-                    user = await bot.get_chat_member(chat_id=GROUP_CHAT_ID, user_id=initiator_id)
-                    if user.user.username and user.user.username.lstrip('@') == username:
-                        await message.reply(f"{initiator_clickable}, нельзя меняться с самим собой!", parse_mode="HTML")
-                        return
-                    # Проверяем всех в очереди, так как нет прямого способа получить user_id по username
-                    for user_id in queue:
-                        user = await bot.get_chat_member(chat_id=GROUP_CHAT_ID, user_id=user_id)
-                        if user.user.username and user.user.username.lstrip('@') == username:
-                            target_id = user_id
-                            target_name = user.user.first_name or user.user.username or str(user_id)
-                            break
-                except Exception as e:
-                    logging.error(f"Ошибка при проверке username {username}: {str(e)}")
-    if not target_id:
-        await message.reply("Не удалось найти указанного пользователя! Убедись, что @username правильный и пользователь в группе.")
-        return
-    if target_id not in queue:
-        await message.reply(f"{get_clickable_name(target_id, target_name)}, не в очереди!", parse_mode="HTML")
-        return
-    if initiator_id == target_id:
-        await message.reply(f"{initiator_clickable}, нельзя меняться с самим собой!", parse_mode="HTML")
-        return
-    # Меняем местами в очереди
-    initiator_idx = list(queue).index(initiator_id)
-    target_idx = list(queue).index(target_id)
-    queue[initiator_idx], queue[target_idx] = queue[target_idx], queue[initiator_idx]
-    await message.reply(
-        f"{initiator_clickable} и {get_clickable_name(target_id, target_name)} поменялись местами в очереди!",
-        parse_mode="HTML"
-    )
-    logging.info(f"{initiator_name} (ID: {initiator_id}) и {target_name} (ID: {target_id}) поменялись местами")
 
     # Проверка, находится ли пользователь на перерыве или ожидает подтверждения
     if user_id == current_break_user:
@@ -185,7 +129,7 @@ async def swap_queue_position(message: types.Message):
         await callback_query.message.answer(f"{clickable_name}, ти вже в черзі!", parse_mode="HTML")
         await callback_query.answer()
         return
-
+        
     # Если очередь пуста, нет текущего перерыва и нет ожидающего подтверждения
     if not queue and current_break_user is None and pending_break_user is None:
         current_break_user = user_id
