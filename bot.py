@@ -117,50 +117,50 @@ async def cancel_break(message: types.Message):
         
 # Обробник команди обміну чергою /swap
 @dp.message_handler(commands=['swap'])
-    initiator_id = message.from_user.id
-    initiator_name = message.from_user.first_name or message.from_user.username or str(initiator_id)
-    if initiator_id not in queue:
-        await message.reply(f"{get_clickable_name(initiator_id, initiator_name)}, ти не в черзі!", parse_mode="HTML")
-        return
-    try:
-        target_username = message.text.split()[1].lstrip('@')
-        target_user = None
-        chat_members = await bot.get_chat_administrators(chat_id=GROUP_CHAT_ID)  # Проверяем админов
+initiator_id = message.from_user.id
+initiator_name = message.from_user.first_name or message.from_user.username or str(initiator_id)
+if initiator_id not in queue:
+    await message.reply(f"{get_clickable_name(initiator_id, initiator_name)}, ти не в черзі!", parse_mode="HTML")
+    return
+try:
+    target_username = message.text.split()[1].lstrip('@')
+    target_user = None
+    chat_members = await bot.get_chat_administrators(chat_id=GROUP_CHAT_ID)  # Проверяем админов
+    for member in chat_members:
+        if member.user.username == target_username:
+            target_user = member
+            break
+    if not target_user:
+        chat_members = await bot.get_chat_members(chat_id=GROUP_CHAT_ID)  # Проверяем всех участников
         for member in chat_members:
             if member.user.username == target_username:
                 target_user = member
                 break
-        if not target_user:
-            chat_members = await bot.get_chat_members(chat_id=GROUP_CHAT_ID)  # Проверяем всех участников
-            for member in chat_members:
-                if member.user.username == target_username:
-                    target_user = member
-                    break
-        if not target_user:
-            await message.reply(f"Користувач @{target_username} не знайдений у групі!")
-            return
-        target_id = target_user.user.id
-        target_name = target_user.user.first_name or target_user.user.username or str(target_id)
-        if target_id not in queue:
-            await message.reply(f"{get_clickable_name(target_id, target_name)}, не у черзі!", parse_mode="HTML")
-            return
-        if initiator_id == target_id:
-            await message.reply(f"{get_clickable_name(initiator_id, initiator_name)}, неможливо мінятися з самим собою!", parse_mode="HTML")
-            return
-        initiator_idx = list(queue).index(initiator_id)
-        target_idx = list(queue).index(target_id)
-        queue[initiator_idx], queue[target_idx] = queue[target_idx], queue[initiator_idx]
-        await message.reply(
-            f"{get_clickable_name(initiator_id, initiator_name)} 🔄 "
-            f"{get_clickable_name(target_id, target_name)} помінялись місцями у черзі!",
-            parse_mode="HTML"
-        )
-        logging.info(f"{initiator_name} (ID: {initiator_id}) и {target_name} (ID: {target_id}) помінялись місцями")
-    except IndexError:
-        await message.reply("Вкажи username! Приклад: /swap @username")
-    except Exception as e:
-        await message.reply("Помилка при обміні місцями. Спробуй знову!")
-        logging.error(f"Помилка в /swap для {initiator_name} (ID: {initiator_id}): {str(e)}")
+    if not target_user:
+        await message.reply(f"Користувач @{target_username} не знайдений у групі!")
+        return
+    target_id = target_user.user.id
+    target_name = target_user.user.first_name or target_user.user.username or str(target_id)
+    if target_id not in queue:
+        await message.reply(f"{get_clickable_name(target_id, target_name)}, не у черзі!", parse_mode="HTML")
+        return
+    if initiator_id == target_id:
+        await message.reply(f"{get_clickable_name(initiator_id, initiator_name)}, неможливо мінятися з самим собою!", parse_mode="HTML")
+        return
+    initiator_idx = list(queue).index(initiator_id)
+    target_idx = list(queue).index(target_id)
+    queue[initiator_idx], queue[target_idx] = queue[target_idx], queue[initiator_idx]
+    await message.reply(
+        f"{get_clickable_name(initiator_id, initiator_name)} 🔄 "
+        f"{get_clickable_name(target_id, target_name)} помінялись місцями у черзі!",
+        parse_mode="HTML"
+    )
+    logging.info(f"{initiator_name} (ID: {initiator_id}) и {target_name} (ID: {target_id}) помінялись місцями")
+except IndexError:
+    await message.reply("Вкажи username! Приклад: /swap @username")
+except Exception as e:
+    await message.reply("Помилка при обміні місцями. Спробуй знову!")
+    logging.error(f"Помилка в /swap для {initiator_name} (ID: {initiator_id}): {str(e)}")
 
 # Обработчик нажатия на кнопку "На перерыв"
 @dp.callback_query_handler(lambda c: c.data == "go_break")
