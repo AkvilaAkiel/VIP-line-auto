@@ -34,6 +34,39 @@ current_break_user = None  # Текущий пользователь на пер
 pending_break_user = None  # Пользователь, ожидающий подтверждения перерыва (user_id)
 break_duration = 600  # 10 минут в секундах
 
+# Функция для сохранения состояния
+def save_state():
+    state = {
+        "queue": list(queue),
+        "current_break_user": current_break_user,
+        "pending_break_user": pending_break_user
+    }
+    try:
+        with open(STATE_FILE, 'w') as f:
+            json.dump(state, f)
+        logging.info(f"Стан збережено у {STATE_FILE}")
+    except Exception as e:
+        logging.error(f"Помилка збереження стану у {STATE_FILE}: {str(e)}")
+
+# Функция для загрузки состояния
+def load_state():
+    global queue, current_break_user, pending_break_user
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, 'r') as f:
+                state = json.load(f)
+            queue = deque(state.get("queue", []))
+            current_break_user = state.get("current_break_user", None)
+            pending_break_user = state.get("pending_break_user", None)
+            logging.info(f"Стан відновлено з {STATE_FILE}: queue={list(queue)}, current_break_user={current_break_user}, pending_break_user={pending_break_user}")
+        else:
+            logging.info(f"Файл {STATE_FILE} не знайдено, ініціалізація порожнього стану")
+    except Exception as e:
+        logging.error(f"Помилка завантаження стану з {STATE_FILE}: {str(e)}")
+        queue = deque()
+        current_break_user = None
+        pending_break_user = None
+
 # Создаём инлайн-кнопки
 break_button = InlineKeyboardMarkup()
 break_button.add(InlineKeyboardButton("На перерву ⚡️", callback_data="go_break"))
@@ -123,6 +156,7 @@ async def cancel_break(message: types.Message):
         logging.info(f"{user_name} (ID: {user_id}) видалено з черги")
     else:
         await message.reply(f"{clickable_name}, ти не на перерві, не в черзі й не очікуєш підтвердження!", parse_mode="HTML")
+    save_state()
 
 # Обработчик команды /swap
 @dp.message_handler(commands=['swap'])
@@ -175,6 +209,7 @@ async def swap_queue_position(message: types.Message):
         parse_mode="HTML"
     )
     logging.info(f"{initiator_name} (ID: {initiator_id}) та {target_name} (ID: {target_id}) помінялися місцями")
+    save_state()
 
 # Обработчик нажатия на кнопку "На перерву"
 @dp.callback_query_handler(lambda c: c.data == "go_break")
@@ -218,6 +253,7 @@ async def process_break_request(callback_query: types.CallbackQuery):
             parse_mode="HTML"
         )
         logging.info(f"{user_name} (ID: {user_id}) додано до черги в групі {GROUP_CHAT_ID}, позиція: {len(queue)}")
+    save_state()
     try:
         await callback_query.answer()
     except exceptions.InvalidQueryID as e:
@@ -241,6 +277,7 @@ async def start_break(callback_query: types.CallbackQuery):
     else:
         await callback_query.message.answer(f"{clickable_name}, це не твоя черга! 🟥", parse_mode="HTML")
         logging.info(f"{user_name} (ID: {user_id}) користувач намагався почати перерву не в свою чергу в групі {GROUP_CHAT_ID}")
+    save_state()
     try:
         await callback_query.answer()
     except exceptions.InvalidQueryID as e:
@@ -272,11 +309,13 @@ async def break_timer(user_id, user_name):
         else:
             current_break_user = None
             logging.info(f"Черга порожня, перерву завершено в групі {GROUP_CHAT_ID}")
+        save_state()
     except Exception as e:
         logging.error(f"Помилка в break_timer для {user_name} (ID: {user_id}) у групі {GROUP_CHAT_ID}: {str(e)}")
 
 # Настройка Webhook при запуске
 async def on_startup(_):
+    load_state() # Загружаем состояние при старте
     webhook_info = await bot.get_webhook_info()
     if webhook_info.url != WEBHOOK_URL:
         await bot.set_webhook(url=WEBHOOK_URL)
