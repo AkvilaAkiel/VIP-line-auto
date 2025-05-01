@@ -7,6 +7,9 @@ import asyncio
 from collections import deque
 import os
 import logging
+import json
+import shutil
+from json.decoder import JSONDecodeError
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +26,10 @@ if not GROUP_CHAT_ID:
     logging.error("GROUP_CHAT_ID не задано в змінних оточення!")
     raise ValueError("GROUP_CHAT_ID не задано в змінних оточення")
 GROUP_CHAT_ID = int(GROUP_CHAT_ID)
+
+# Путь к файлам для сохранения состояния
+STATE_FILE = "queue_state.json"
+BACKUP_STATE_FILE = "queue_state_backup.json"
 
 # Инициализация бота и диспетчера
 bot = Bot(token=API_TOKEN)
@@ -42,11 +49,19 @@ def save_state():
         "pending_break_user": pending_break_user
     }
     try:
+        # Создаём резервную копию, если файл существует
+        if os.path.exists(STATE_FILE):
+            shutil.copy(STATE_FILE, BACKUP_STATE_FILE)
+            logging.info(f"Створено резервну копію {BACKUP_STATE_FILE}")
         with open(STATE_FILE, 'w') as f:
-            json.dump(state, f)
+            json.dump(state, f, indent=2)
         logging.info(f"Стан збережено у {STATE_FILE}")
     except Exception as e:
         logging.error(f"Помилка збереження стану у {STATE_FILE}: {str(e)}")
+        # Восстанавливаем резервную копию, если есть
+        if os.path.exists(BACKUP_STATE_FILE):
+            shutil.copy(BACKUP_STATE_FILE, STATE_FILE)
+            logging.info(f"Відновлено з резервної копії {BACKUP_STATE_FILE}")
 
 # Функция для загрузки состояния
 def load_state():
@@ -55,12 +70,40 @@ def load_state():
         if os.path.exists(STATE_FILE):
             with open(STATE_FILE, 'r') as f:
                 state = json.load(f)
-            queue = deque(state.get("queue", []))
+            # Проверяем целостность данных
+            if not isinstance(state, dict):
+                raise ValueError("Невалідний формат файлу: очікується словник")
+            queue_list = state.get("queue", [])
+            if not isinstance(queue_list, list):
+                raise ValueError("Поле 'queue' має бути списком")
+            queue = deque(queue_list)
             current_break_user = state.get("current_break_user", None)
             pending_break_user = state.get("pending_break_user", None)
             logging.info(f"Стан відновлено з {STATE_FILE}: queue={list(queue)}, current_break_user={current_break_user}, pending_break_user={pending_break_user}")
         else:
             logging.info(f"Файл {STATE_FILE} не знайдено, ініціалізація порожнього стану")
+            queue = deque()
+            current_break_user = None
+            pending_break_user = None
+    except JSONDecodeError as e:
+        logging.error(f"Помилка декодування JSON у {STATE_FILE}: {str(e)}")
+        queue = deque()
+        current_break_user = None
+        pending_break_user = None
+        # Пробуем загрузить резервную копию
+        if os.path.exists(BACKUP_STATE_FILE):
+            logging.info(f"Спроба відновлення з {BACKUP_STATE_FILE}")
+            try:
+                with open(BACKUP_STATE_FILE, 'r') as f:
+                    state = json.load(f)
+                queue = deque(state.get("queue", []))
+                current_break_user = state.get("current_break_user", None)
+                pending_break_user = state.get("pending_break_user", None)
+                logging.info(f"Стан відновлено з {BACKUP_STATE_FILE}: queue={list(queue)}, current_break_user={current_break_user}, pending_break_user={pending_break_user}")
+                # Сохраняем восстановленное состояние
+                save_state()
+            except Exception as backup_e:
+                logging.error(f"Помилка відновлення з {BACKUP_STATE_FILE}: {str(backup_e)}")
     except Exception as e:
         logging.error(f"Помилка завантаження стану з {STATE_FILE}: {str(e)}")
         queue = deque()
@@ -90,6 +133,34 @@ async def send_welcome(message: types.Message):
         reply_markup=break_button
     )
     logging.info(f"Команда /start у групі {GROUP_CHAT_ID}")
+
+# Обработчик команды /myid
+@dp.message_handler(commands=['myid'])
+async def show_my_id(message: types.Message):
+    if message.chat.id != GROUP_CHAT_ID:
+        await message.reply("Цей бот працює тільки в певній групі!")
+        logging.info(f"Спроба /myid у невірному чаті {message.chat.id}")
+        return
+    username = message.from_user.username or "не задано"
+    await message.reply(f"Твій username: @{username}\nТвій user_id: {message.from_user.id}")
+
+# Обработчик команды /backup
+@dp.message_handler(commands=['backup'])
+async def backup_queue(message: types.Message):
+    if message.chat.id != GROUP_CHAT_ID:
+        await message.reply("Цей бот працює тільки в певній групі!")
+        logging.info(f"Спроба /backup у невірному чаті {message.chat.id}")
+        return
+    state = {
+        "queue": list(queue),
+        "current_break_user": current_break_user,
+        "pending_break_user": pending_break_user
+    }
+    await message.reply(
+        f"Резервна копія черги:\n```json\n{json.dumps(state, indent=2, ensure_ascii=False)}\n```",
+        parse_mode="Markdown"
+    )
+    logging.info(f"Команда /backup у групі {GROUP_CHAT_ID}: експортовано стан")
 
 # Обработчик команды /queue
 @dp.message_handler(commands=['queue'])
@@ -156,7 +227,7 @@ async def cancel_break(message: types.Message):
         logging.info(f"{user_name} (ID: {user_id}) видалено з черги")
     else:
         await message.reply(f"{clickable_name}, ти не на перерві, не в черзі й не очікуєш підтвердження!", parse_mode="HTML")
-    save_state()
+    save_state()  # Сохраняем состояние после изменений
 
 # Обработчик команды /swap
 @dp.message_handler(commands=['swap'])
@@ -209,11 +280,18 @@ async def swap_queue_position(message: types.Message):
         parse_mode="HTML"
     )
     logging.info(f"{initiator_name} (ID: {initiator_id}) та {target_name} (ID: {target_id}) помінялися місцями")
-    save_state()
+    save_state()  # Сохраняем состояние после изменений
 
 # Обработчик нажатия на кнопку "На перерву"
 @dp.callback_query_handler(lambda c: c.data == "go_break")
 async def process_break_request(callback_query: types.CallbackQuery):
+    if callback_query.message.chat.id != GROUP_CHAT_ID:
+        await callback_query.message.answer("Цей бот працює тільки в певній групі!")
+        try:
+            await callback_query.answer()
+        except exceptions.InvalidQueryID as e:
+            logging.warning(f"Застарілий callback у process_break_request: {str(e)}")
+        return
     global current_break_user, pending_break_user, queue
     user_id = callback_query.from_user.id
     user_name = callback_query.from_user.first_name or callback_query.from_user.username or str(user_id)
@@ -253,7 +331,7 @@ async def process_break_request(callback_query: types.CallbackQuery):
             parse_mode="HTML"
         )
         logging.info(f"{user_name} (ID: {user_id}) додано до черги в групі {GROUP_CHAT_ID}, позиція: {len(queue)}")
-    save_state()
+    save_state()  # Сохраняем состояние после изменений
     try:
         await callback_query.answer()
     except exceptions.InvalidQueryID as e:
@@ -262,6 +340,13 @@ async def process_break_request(callback_query: types.CallbackQuery):
 # Обработчик нажатия на кнопку "Почати перерву"
 @dp.callback_query_handler(lambda c: c.data == "start_break")
 async def start_break(callback_query: types.CallbackQuery):
+    if callback_query.message.chat.id != GROUP_CHAT_ID:
+        await callback_query.message.answer("Цей бот працює тільки в певній групі!")
+        try:
+            await callback_query.answer()
+        except exceptions.InvalidQueryID as e:
+            logging.warning(f"Застарілий callback у start_break: {str(e)}")
+        return
     global current_break_user, pending_break_user
     user_id = callback_query.from_user.id
     user_name = callback_query.from_user.first_name or callback_query.from_user.username or str(user_id)
@@ -277,7 +362,7 @@ async def start_break(callback_query: types.CallbackQuery):
     else:
         await callback_query.message.answer(f"{clickable_name}, це не твоя черга! 🟥", parse_mode="HTML")
         logging.info(f"{user_name} (ID: {user_id}) користувач намагався почати перерву не в свою чергу в групі {GROUP_CHAT_ID}")
-    save_state()
+    save_state()  # Сохраняем состояние после изменений
     try:
         await callback_query.answer()
     except exceptions.InvalidQueryID as e:
@@ -309,13 +394,13 @@ async def break_timer(user_id, user_name):
         else:
             current_break_user = None
             logging.info(f"Черга порожня, перерву завершено в групі {GROUP_CHAT_ID}")
-        save_state()
+        save_state()  # Сохраняем состояние после изменений
     except Exception as e:
         logging.error(f"Помилка в break_timer для {user_name} (ID: {user_id}) у групі {GROUP_CHAT_ID}: {str(e)}")
 
 # Настройка Webhook при запуске
 async def on_startup(_):
-    load_state() # Загружаем состояние при старте
+    load_state()  # Загружаем состояние при старте
     webhook_info = await bot.get_webhook_info()
     if webhook_info.url != WEBHOOK_URL:
         await bot.set_webhook(url=WEBHOOK_URL)
