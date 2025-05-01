@@ -340,13 +340,6 @@ async def process_break_request(callback_query: types.CallbackQuery):
 # Обработчик нажатия на кнопку "Почати перерву"
 @dp.callback_query_handler(lambda c: c.data == "start_break")
 async def start_break(callback_query: types.CallbackQuery):
-    if callback_query.message.chat.id != GROUP_CHAT_ID:
-        await callback_query.message.answer("Цей бот працює тільки в певній групі!")
-        try:
-            await callback_query.answer()
-        except exceptions.InvalidQueryID as e:
-            logging.warning(f"Застарілий callback у start_break: {str(e)}")
-        return
     global current_break_user, pending_break_user
     user_id = callback_query.from_user.id
     user_name = callback_query.from_user.first_name or callback_query.from_user.username or str(user_id)
