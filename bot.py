@@ -7,6 +7,7 @@ import asyncio
 from collections import deque
 import os
 import logging
+import json
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -57,6 +58,34 @@ async def send_welcome(message: types.Message):
         reply_markup=break_button
     )
     logging.info(f"Команда /start у групі {GROUP_CHAT_ID}")
+
+# Обработчик команды /myid
+@dp.message_handler(commands=['myid'])
+async def show_my_id(message: types.Message):
+    if message.chat.id != GROUP_CHAT_ID:
+        await message.reply("Цей бот працює тільки в певній групі!")
+        logging.info(f"Спроба /myid у невірному чаті {message.chat.id}")
+        return
+    username = message.from_user.username or "не задано"
+    await message.reply(f"Твій username: @{username}\nТвій user_id: {message.from_user.id}")
+
+# Обработчик команды /backup
+@dp.message_handler(commands=['backup'])
+async def backup_queue(message: types.Message):
+    if message.chat.id != GROUP_CHAT_ID:
+        await message.reply("Цей бот працює тільки в певній групі!")
+        logging.info(f"Спроба /backup у невірному чаті {message.chat.id}")
+        return
+    state = {
+        "queue": list(queue),
+        "current_break_user": current_break_user,
+        "pending_break_user": pending_break_user
+    }
+    await message.reply(
+        f"Резервна копія черги:\n```json\n{json.dumps(state, indent=2, ensure_ascii=False)}\n```",
+        parse_mode="Markdown"
+    )
+    logging.info(f"Команда /backup у групі {GROUP_CHAT_ID}: експортовано стан")
 
 # Обработчик команды /queue
 @dp.message_handler(commands=['queue'])
@@ -225,7 +254,6 @@ async def process_break_request(callback_query: types.CallbackQuery):
 
 # Обработчик нажатия на кнопку "Почати перерву"
 @dp.callback_query_handler(lambda c: c.data == "start_break")
-async def start_break(callback_query: types.CallbackQuery):
     global current_break_user, pending_break_user
     user_id = callback_query.from_user.id
     user_name = callback_query.from_user.first_name or callback_query.from_user.username or str(user_id)
@@ -303,5 +331,5 @@ if __name__ == '__main__':
         on_startup=on_startup,
         skip_updates=True,
         host='0.0.0.0',
-        port=int(os.getenv('PORT', 8000))
+        port=int(os.getenv('PORT', 10000))
     )
