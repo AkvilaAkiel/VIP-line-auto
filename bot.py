@@ -254,6 +254,7 @@ async def process_break_request(callback_query: types.CallbackQuery):
 
 # Обработчик нажатия на кнопку "Почати перерву"
 @dp.callback_query_handler(lambda c: c.data == "start_break")
+async def start_break(callback_query: types.CallbackQuery):
     global current_break_user, pending_break_user
     user_id = callback_query.from_user.id
     user_name = callback_query.from_user.first_name or callback_query.from_user.username or str(user_id)
