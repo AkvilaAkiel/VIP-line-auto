@@ -142,10 +142,35 @@ async def cancel_break(message: types.Message):
         current_break_user = None
         await message.reply(f"{clickable_name}, твою перерву скасовано! 🚪", parse_mode="HTML")
         logging.info(f"{user_name} (ID: {user_id}) перерву скасовано")
+        # Переходим к следующему в очереди, если есть
+        if queue:
+            next_user_id = queue.popleft()
+            next_user = await bot.get_chat_member(chat_id=GROUP_CHAT_ID, user_id=next_user_id)
+            next_user_name = next_user.user.first_name or next_user.user.username or str(next_user_id)
+            pending_break_user = next_user_id
+            await bot.send_message(
+                next_user_id,
+                f"{next_user_name}, твоя черга на перерву! ⚡️ Натисни 'Почати перерву', по готовності.",
+                reply_markup=start_break_button
+            )
+            logging.info(f"{next_user_name} (ID: {next_user_id}) повідомлений про свою чергу в групі {GROUP_CHAT_ID}")
     elif user_id == pending_break_user:
         pending_break_user = None
+        current_break_user = None  # Убедимся, что предыдущий перерыв завершён
         await message.reply(f"{clickable_name}, ти відмовився від перерви.", parse_mode="HTML")
         logging.info(f"{user_name} (ID: {user_id}) відмовився від очікування перерви")
+        # Переходим к следующему в очереди, если есть
+        if queue:
+            next_user_id = queue.popleft()
+            next_user = await bot.get_chat_member(chat_id=GROUP_CHAT_ID, user_id=next_user_id)
+            next_user_name = next_user.user.first_name or next_user.user.username or str(next_user_id)
+            pending_break_user = next_user_id
+            await bot.send_message(
+                next_user_id,
+                f"{next_user_name}, твоя черга на перерву! ⚡️ Натисни 'Почати перерву', по готовності.",
+                reply_markup=start_break_button
+            )
+            logging.info(f"{next_user_name} (ID: {next_user_id}) повідомлений про свою чергу в групі {GROUP_CHAT_ID}")
     elif user_id in queue:
         queue.remove(user_id)
         await message.reply(f"{clickable_name} 🚪, тебе видалено з черги!", parse_mode="HTML")
