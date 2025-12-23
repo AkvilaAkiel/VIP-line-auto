@@ -33,7 +33,7 @@ dp = Dispatcher(bot)
 queue = deque()  # Очередь пользователей (хранит user_id)
 current_break_user = None  # Текущий пользователь на перерыве (user_id)
 pending_break_user = None  # Пользователь, ожидающий подтверждения перерыва (user_id)
-break_duration = 600  # 10 минут в секундах
+break_duration = 900  # 15 минут в секундах
 
 # Создаём инлайн-кнопки
 break_button = InlineKeyboardMarkup()
@@ -261,7 +261,7 @@ async def process_break_request(callback_query: types.CallbackQuery):
     if not queue and current_break_user is None and pending_break_user is None:
         current_break_user = user_id
         await callback_query.message.answer(
-            f"{clickable_name}, перерву розпочато! У тебе 10 хвилин. ✅", parse_mode="HTML"
+            f"{clickable_name}, перерву розпочато! У тебе 15 хвилин. ✅", parse_mode="HTML"
         )
         logging.info(f"{user_name} (ID: {user_id}) користувач почав перерву в групі {GROUP_CHAT_ID}")
         asyncio.create_task(break_timer(user_id, user_name))
@@ -288,7 +288,7 @@ async def start_break(callback_query: types.CallbackQuery):
         current_break_user = user_id
         pending_break_user = None
         await callback_query.message.answer(
-            f"{clickable_name}, перерву розпочато! У тебе 10 хвилин. ✅", parse_mode="HTML"
+            f"{clickable_name}, перерву розпочато! У тебе 15 хвилин. ✅", parse_mode="HTML"
         )
         logging.info(f"{user_name} (ID: {user_id}) користувач почав перерву в групі {GROUP_CHAT_ID}")
         asyncio.create_task(break_timer(user_id, user_name))
