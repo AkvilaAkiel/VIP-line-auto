@@ -122,7 +122,6 @@ async def update_dashboard():
                 message_id=dashboard_msg_id,
                 reply_markup=kb,
                 parse_mode="HTML",
-                disable_notification=True
             )
             return
         except exceptions.MessageNotModified:
@@ -131,7 +130,7 @@ async def update_dashboard():
             logging.warning(f"Не вдалося відредагувати дашборд: {e}")
             dashboard_msg_id = None
 
-    msg = await bot.send_message(GROUP_CHAT_ID, text, reply_markup=kb, parse_mode="HTML")
+    msg = await bot.send_message(GROUP_CHAT_ID, text, reply_markup=kb, parse_mode="HTML", disable_notification=True)
     dashboard_msg_id = msg.message_id
 
 async def call_next():
