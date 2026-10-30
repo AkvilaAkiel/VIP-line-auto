@@ -121,7 +121,8 @@ async def update_dashboard():
                 chat_id=GROUP_CHAT_ID,
                 message_id=dashboard_msg_id,
                 reply_markup=kb,
-                parse_mode="HTML"
+                parse_mode="HTML",
+                disable_notification=True
             )
             return
         except exceptions.MessageNotModified:
