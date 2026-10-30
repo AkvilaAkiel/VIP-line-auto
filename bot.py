@@ -188,7 +188,7 @@ async def timeout_timer(user_id):
 
             await bot.send_message(
                 GROUP_CHAT_ID, 
-                f"⚠️ {get_cached_name(user_id)} не підтвердив початок перерви за 25 хвилин.\n"
+                f"⚠️ {get_cached_name(user_id)} не підтвердив (-ла) початок перерви за 25 хвилин.\n"
                 f"🔄 Його автоматично перенесено в кінець черги.", 
                 parse_mode="HTML"
             )
@@ -448,7 +448,7 @@ async def cb_start_break(callback_query: types.CallbackQuery):
 
     await bot.send_message(
         GROUP_CHAT_ID,
-        f"✅ {get_cached_name(user_id)} пішов на перерву (до {break_end_time.strftime('%H:%M')}).",
+        f"✅ {get_cached_name(user_id)} пішов(-ла) на перерву (до {break_end_time.strftime('%H:%M')}).",
         reply_markup=get_end_early_kb(),
         parse_mode="HTML"
     )
@@ -497,7 +497,7 @@ async def cb_end_early(callback_query: types.CallbackQuery):
 
     await bot.send_message(
         GROUP_CHAT_ID,
-        f"🏃‍♂️ {get_cached_name(user_id)} повернувся з перерви раніше.",
+        f"🏃‍♂️ {get_cached_name(user_id)} повернувся (-лась) з перерви раніше.",
         parse_mode="HTML"
     )
         
