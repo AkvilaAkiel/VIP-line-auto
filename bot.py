@@ -1,15 +1,15 @@
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils import executor
-from aiogram.utils import exceptions
-from aiohttp import web
 import asyncio
 from collections import deque
-import os
-import logging
-import json
 from datetime import datetime, timedelta
+import json
+import logging
+import os
 from zoneinfo import ZoneInfo
+
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils import exceptions, executor
+from aiohttp import web
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO)
@@ -39,12 +39,19 @@ pending_timeout_task = None    # Фоновий таймер очікуванн�
 break_duration = 900           # 15 хвилин у секундах
 timeout_duration = 1500        # 25 хвилин у секундах
 
-dashboard_msg_id = None        # ID повідомлення дашборду в групі
+dashboard_msg_id = None        # ID змінного повідомлення-дашборду
 user_cache = {}                # Кеш імен: {user_id: "clickable_name"}
 KYIV_TZ = ZoneInfo("Europe/Kyiv")
 
-# --- КНОПКИ ---
+# --- КНОПКИ ТА КЛАВІАТУРИ ---
+def get_anchor_kb():
+    """Кнопка для статичного закріпленого повідомлення в шапці"""
+    kb = InlineKeyboardMarkup()
+    kb.add(InlineKeyboardButton("📊 Дашборд черги ⬇️", callback_data="summon_dashboard"))
+    return kb
+
 def get_dashboard_kb():
+    """Кнопки під динамічним дашбордом"""
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton("🔄 Оновити", callback_data="refresh_dash"),
@@ -56,18 +63,20 @@ def get_dashboard_kb():
     return kb
 
 def get_start_break_kb():
+    """Кнопка для персонального пейджера та старту"""
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("Почати перерву ⚡️", callback_data="start_break"))
     return kb
 
 def get_end_early_kb():
+    """Кнопка дострокового завершення"""
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("Завершити раніше 🔚", callback_data="end_early"))
     return kb
 
 # --- ДОПОМІЖНІ ФУНКЦІЇ ---
 def cache_user(user_id, user_name):
-    """Кешує ім'я, щоб не перевантажувати API Telegram"""
+    """Кешує ім'я, щоб уникнути спаму запитами до Telegram API"""
     if user_id not in user_cache:
         user_cache[user_id] = f"<a href='tg://user?id={user_id}'>{user_name}</a>"
 
@@ -75,7 +84,7 @@ def get_cached_name(user_id):
     return user_cache.get(user_id, f"ID: {user_id}")
 
 def generate_dashboard_text():
-    """Генерує візуал для головного дашборду"""
+    """Формує текст інформаційного дашборду"""
     lines = ["<b>📊 ДАШБОРД ПЕРЕРВ</b>\n"]
     
     if current_break_user:
@@ -86,7 +95,7 @@ def generate_dashboard_text():
         lines.append("🟢 <b>На перерві:</b> Нікого\n")
 
     if pending_break_user:
-        lines.append(f"🟡 <b>Очікує:</b> {get_cached_name(pending_break_user)}\n")
+        lines.append(f"🟡 <b>Очікує підтвердження:</b> {get_cached_name(pending_break_user)}\n")
 
     lines.append("<b>🚶‍♂️ Черга:</b>")
     if not queue:
@@ -96,35 +105,36 @@ def generate_dashboard_text():
             lines.append(f"{i}. {get_cached_name(uid)}")
             
     now = datetime.now(KYIV_TZ).strftime('%H:%M:%S')
-    lines.append(f"\n🔄 <i>Оновлено: {now}</i>")
+    lines.append(f"\n🔄 <i>Останнє оновлення: {now}</i>")
     return "\n".join(lines)
 
 async def update_dashboard():
-    """Оновлює закріплений дашборд у групі"""
+    """Редагує існуючий дашборд на місці, не зачіпаючи закріплені повідомлення"""
     global dashboard_msg_id
     text = generate_dashboard_text()
     kb = get_dashboard_kb()
     
     if dashboard_msg_id:
         try:
-            await bot.edit_message_text(text, chat_id=GROUP_CHAT_ID, message_id=dashboard_msg_id, reply_markup=kb, parse_mode="HTML")
+            await bot.edit_message_text(
+                text,
+                chat_id=GROUP_CHAT_ID,
+                message_id=dashboard_msg_id,
+                reply_markup=kb,
+                parse_mode="HTML"
+            )
             return
         except exceptions.MessageNotModified:
             return
         except Exception as e:
-            logging.warning(f"Не вдалося оновити дашборд: {e}")
+            logging.warning(f"Не вдалося відредагувати дашборд: {e}")
             dashboard_msg_id = None
 
     msg = await bot.send_message(GROUP_CHAT_ID, text, reply_markup=kb, parse_mode="HTML")
     dashboard_msg_id = msg.message_id
-    
-    try:
-        await bot.pin_chat_message(GROUP_CHAT_ID, dashboard_msg_id, disable_notification=True)
-    except Exception as e:
-        logging.warning(f"Немає прав на закріплення повідомлення: {e}")
 
 async def call_next():
-    """Передає естафету: пінгує людину в ПП та запускає 25-хв таймер"""
+    """Передає чергу: сповіщає людину персонально зі звуком і запускає 25-хв таймер"""
     global pending_break_user, current_break_user, break_end_time, pending_timeout_task
     
     current_break_user = None
@@ -134,23 +144,21 @@ async def call_next():
         next_user_id = queue.popleft()
         pending_break_user = next_user_id
         
-        # 1. Персональний пейджер у ПП
+        # Персональний виклик у ПП зі звуком та вібрацією
         try:
             await bot.send_message(
                 next_user_id,
                 "⚡️ <b>Твоя черга на перерву!</b>\n\n"
                 "У тебе є <b>25 хвилин</b>, щоб розпочати її. Коли будеш готовий — тисни кнопку нижче:\n"
-                "<i>(Якщо не натиснеш протягом 25 хв, черга піде далі, а тебе перенесе в кінець)</i>",
+                "<i>(Якщо не підтвердити за 25 хв, черга перейде далі, а тебе перенесе в кінець)</i>",
                 reply_markup=get_start_break_kb(),
                 parse_mode="HTML"
             )
         except Exception as e:
             logging.warning(f"Не вдалося надіслати в ПП {next_user_id}: {e}")
         
-        # 2. Тихе оновлення статусу в групі
         await update_dashboard()
         
-        # 3. Запуск таймера очікування 25 хв
         if pending_timeout_task:
             pending_timeout_task.cancel()
         pending_timeout_task = asyncio.create_task(timeout_timer(next_user_id))
@@ -159,16 +167,15 @@ async def call_next():
         await update_dashboard()
 
 async def timeout_timer(user_id):
-    """Спрацьовує через 25 хв неактивності: повертає людину в кінець черги"""
+    """Спрацьовує через 25 хв: переміщує людину в кінець черги"""
     try:
         await asyncio.sleep(timeout_duration)
         global pending_break_user, queue
         
         if pending_break_user == user_id:
             pending_break_user = None
-            queue.append(user_id)  # Переносимо в кінець списку
+            queue.append(user_id)
             
-            # Повідомляємо особисто в ПП
             try:
                 await bot.send_message(
                     user_id,
@@ -179,7 +186,6 @@ async def timeout_timer(user_id):
             except Exception:
                 pass
 
-            # Сповіщення в групу
             await bot.send_message(
                 GROUP_CHAT_ID, 
                 f"⚠️ {get_cached_name(user_id)} не підтвердив початок перерви за 25 хвилин.\n"
@@ -196,17 +202,15 @@ async def break_timer(user_id):
     try:
         await asyncio.sleep(break_duration)
         
-        # 1. Персональний дзвінок у ПП
         try:
             await bot.send_message(
                 user_id,
-                "🔚 <b>Твоя 15-хвилинна перерва добігла кінця!</b>\nПора повертатися до роботи 💼",
+                "🔚 <b>Твоя 15-хвилинна перерва добігла кінця!</b>\nЧас повертатися до роботи 💼",
                 parse_mode="HTML"
             )
         except Exception:
             pass
             
-        # 2. Сповіщення в групу
         await bot.send_message(
             GROUP_CHAT_ID,
             f"🔚 {get_cached_name(user_id)}, перерва завершилася!",
@@ -215,28 +219,51 @@ async def break_timer(user_id):
         await call_next()
         
     except asyncio.CancelledError:
-        logging.info(f"Таймер перерви для {user_id} скасовано достроково.")
+        logging.info(f"Таймер для {user_id} скасовано достроково.")
 
 # --- ОБРОБНИКИ КОМАНД ---
+@dp.message_handler(commands=['init_pin', 'pin_button'])
+async def cmd_setup_anchor(message: types.Message):
+    """Створює та закріплює статичне повідомлення з кнопкою 'Дашборд' у шапці"""
+    if message.chat.id != GROUP_CHAT_ID:
+        return
+        
+    msg = await bot.send_message(
+        GROUP_CHAT_ID,
+        "📌 <b>Керування перервами VIP лінії</b>\n"
+        "Натисніть кнопку нижче, щоб викликати актуальний дашборд у самий низ чату:",
+        reply_markup=get_anchor_kb(),
+        parse_mode="HTML"
+    )
+    try:
+        await bot.pin_chat_message(GROUP_CHAT_ID, msg.message_id, disable_notification=True)
+    except Exception as e:
+        logging.warning(f"Не вдалося закріпити повідомлення: {e}")
+        
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
-    # Якщо пишуть у приватні повідомлення боту
+    """Активація бота в ПП або виклик дашборду в групі"""
     if message.chat.type == "private":
         cache_user(message.from_user.id, message.from_user.first_name or "Користувач")
         await message.reply(
             "👋 <b>Привіт! Я пейджер-бот перерв VIP лінії.</b>\n\n"
             "Тут ти отримуватимеш персональні виклики на перерву та нагадування про її завершення. "
-            "Керувати чергою можна через закріплений дашборд у робочій групі!",
+            "Керувати чергою можна через закріплену кнопку в робочій групі!",
             parse_mode="HTML"
         )
         return
 
-    # Якщо пишуть у групі
     if message.chat.id == GROUP_CHAT_ID:
         await cmd_dashboard(message)
 
 @dp.message_handler(commands=['queue', 'dashboard'])
 async def cmd_dashboard(message: types.Message):
+    """Спускає дашборд у самий низ чату за ручною командою"""
     if message.chat.id != GROUP_CHAT_ID:
         return
         
@@ -245,7 +272,7 @@ async def cmd_dashboard(message: types.Message):
     if dashboard_msg_id:
         try:
             await bot.delete_message(GROUP_CHAT_ID, dashboard_msg_id)
-        except:
+        except Exception:
             pass
         dashboard_msg_id = None
 
@@ -253,7 +280,7 @@ async def cmd_dashboard(message: types.Message):
     
     try:
         await message.delete()
-    except:
+    except Exception:
         pass
 
 @dp.message_handler(commands=['backup'])
@@ -301,7 +328,8 @@ async def swap_queue_position(message: types.Message):
                         target_id = uid
                         target_name = user.user.first_name or user.user.username or str(uid)
                         break
-                except: pass
+                except Exception:
+                    pass
 
     if not target_id or target_id not in queue:
         await message.reply("Користувача не знайдено в черзі!")
@@ -321,13 +349,35 @@ async def swap_queue_position(message: types.Message):
     )
     await update_dashboard()
 
-# --- ОБРОБНИКИ КНОПОК ---
+# --- ОБРОБНИКИ КНОПОК (CALLBACKS) ---
+@dp.callback_query_handler(lambda c: c.data == "summon_dashboard")
+async def cb_summon_dashboard(callback_query: types.CallbackQuery):
+    """Спрацьовує при кліку на закріплену в шапці кнопку"""
+    global dashboard_msg_id
+    
+    if dashboard_msg_id:
+        try:
+            await bot.delete_message(GROUP_CHAT_ID, dashboard_msg_id)
+        except Exception:
+            pass
+        dashboard_msg_id = None
+
+    text = generate_dashboard_text()
+    kb = get_dashboard_kb()
+    msg = await bot.send_message(GROUP_CHAT_ID, text, reply_markup=kb, parse_mode="HTML")
+    dashboard_msg_id = msg.message_id
+    
+    try:
+        await callback_query.answer("Дашборд спущено вниз чату ⬇️")
+    except Exception:
+        pass
+
 @dp.callback_query_handler(lambda c: c.data == "refresh_dash")
 async def cb_refresh(callback_query: types.CallbackQuery):
     await update_dashboard()
     try:
         await callback_query.answer("Оновлено!")
-    except:
+    except Exception:
         pass
 
 @dp.callback_query_handler(lambda c: c.data == "go_break")
@@ -342,12 +392,10 @@ async def cb_go_break(callback_query: types.CallbackQuery):
         await callback_query.answer("Ти вже в черзі або на перерві!", show_alert=True)
         return
 
-    # Якщо нікого немає — перерва починається відразу
     if not queue and current_break_user is None and pending_break_user is None:
         current_break_user = user_id
         break_end_time = datetime.now(KYIV_TZ) + timedelta(seconds=break_duration)
         
-        # Повідомлення в ПП
         try:
             await bot.send_message(
                 user_id,
@@ -358,7 +406,6 @@ async def cb_go_break(callback_query: types.CallbackQuery):
         except Exception:
             pass
 
-        # Повідомлення в групу
         await bot.send_message(
             GROUP_CHAT_ID,
             f"✅ {get_cached_name(user_id)}, перерву розпочато! До {break_end_time.strftime('%H:%M')}.",
@@ -381,7 +428,6 @@ async def cb_start_break(callback_query: types.CallbackQuery):
         await callback_query.answer("Це не твоя черга!", show_alert=True)
         return
         
-    # Скасовуємо тайм-аут 25 хв, оскільки людина підтвердила початок
     if pending_timeout_task:
         pending_timeout_task.cancel()
         
@@ -389,20 +435,17 @@ async def cb_start_break(callback_query: types.CallbackQuery):
     pending_break_user = None
     break_end_time = datetime.now(KYIV_TZ) + timedelta(seconds=break_duration)
     
-    # 1. Відповідь у чат, де натиснули кнопку (наприклад, у ПП)
     await callback_query.message.answer(
         f"✅ Перерву розпочато! У тебе 15 хвилин (до {break_end_time.strftime('%H:%M')}).",
         reply_markup=get_end_early_kb(),
         parse_mode="HTML"
     )
     
-    # Видаляємо повідомлення-запит із кнопкою "Почати", щоб не клікати двічі
     try:
         await callback_query.message.delete()
-    except:
+    except Exception:
         pass
 
-    # 2. Сповіщення в групу
     await bot.send_message(
         GROUP_CHAT_ID,
         f"✅ {get_cached_name(user_id)} пішов на перерву (до {break_end_time.strftime('%H:%M')}).",
@@ -449,10 +492,9 @@ async def cb_end_early(callback_query: types.CallbackQuery):
     
     try:
         await callback_query.message.edit_reply_markup(reply_markup=None)
-    except:
+    except Exception:
         pass
 
-    # Сповіщення в групу
     await bot.send_message(
         GROUP_CHAT_ID,
         f"🏃‍♂️ {get_cached_name(user_id)} повернувся з перерви раніше.",
@@ -461,7 +503,7 @@ async def cb_end_early(callback_query: types.CallbackQuery):
         
     await call_next()
 
-# --- ЗАПУСК ЧЕРЕЗ WEBHOOK ---
+# --- СТАРТ СЕРВЕРА ЧЕРЕЗ WEBHOOK ---
 async def on_startup(_):
     webhook_info = await bot.get_webhook_info()
     if webhook_info.url != WEBHOOK_URL:
