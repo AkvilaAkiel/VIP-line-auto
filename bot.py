@@ -364,7 +364,7 @@ async def cb_summon_dashboard(callback_query: types.CallbackQuery):
 
     text = generate_dashboard_text()
     kb = get_dashboard_kb()
-    msg = await bot.send_message(GROUP_CHAT_ID, text, reply_markup=kb, parse_mode="HTML")
+    msg = await bot.send_message(GROUP_CHAT_ID, text, reply_markup=kb, parse_mode="HTML", disable_notification=True)
     dashboard_msg_id = msg.message_id
     
     try:
