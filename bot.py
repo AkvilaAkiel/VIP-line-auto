@@ -109,7 +109,7 @@ def generate_dashboard_text():
     return "\n".join(lines)
 
 async def update_dashboard():
-    """Редагує існуючий дашборд на місці, не зачіпаючи закріплені повідомлення"""
+    """Редагує існуючий дашборд на місці у тихому режимі"""
     global dashboard_msg_id
     text = generate_dashboard_text()
     kb = get_dashboard_kb()
@@ -121,7 +121,7 @@ async def update_dashboard():
                 chat_id=GROUP_CHAT_ID,
                 message_id=dashboard_msg_id,
                 reply_markup=kb,
-                parse_mode="HTML",
+                parse_mode="HTML"
             )
             return
         except exceptions.MessageNotModified:
@@ -130,7 +130,13 @@ async def update_dashboard():
             logging.warning(f"Не вдалося відредагувати дашборд: {e}")
             dashboard_msg_id = None
 
-    msg = await bot.send_message(GROUP_CHAT_ID, text, reply_markup=kb, parse_mode="HTML", disable_notification=True)
+    msg = await bot.send_message(
+        GROUP_CHAT_ID, 
+        text, 
+        reply_markup=kb, 
+        parse_mode="HTML",
+        disable_notification=True
+    )
     dashboard_msg_id = msg.message_id
 
 async def call_next():
@@ -144,13 +150,12 @@ async def call_next():
         next_user_id = queue.popleft()
         pending_break_user = next_user_id
         
-        # Персональний виклик у ПП зі звуком та вібрацією
         try:
             await bot.send_message(
                 next_user_id,
                 "⚡️ <b>Твоя черга на перерву!</b>\n\n"
                 "У тебе є <b>25 хвилин</b>, щоб розпочати її. Коли будеш готовий — тисни кнопку нижче:\n"
-                "<i>(Якщо не підтвердити за 25 хв, черга перейде далі, а тебе перенесе в кінець)</i>",
+                "<i>(Якщо не підтвердити за 25 хв, черга перейде далі, а тебе перенесе на 2-ге місце)</i>",
                 reply_markup=get_start_break_kb(),
                 parse_mode="HTML"
             )
@@ -167,20 +172,32 @@ async def call_next():
         await update_dashboard()
 
 async def timeout_timer(user_id):
-    """Спрацьовує через 25 хв: переміщує людину в кінець черги"""
+    """Спрацьовує через 25 хв: переносить людину на 2-ге місце або робить наступною"""
     try:
         await asyncio.sleep(timeout_duration)
         global pending_break_user, queue
         
         if pending_break_user == user_id:
             pending_break_user = None
-            queue.append(user_id)
             
+            if queue:
+                first_in_line = queue.popleft()
+                if len(queue) >= 1:
+                    queue.insert(1, user_id)
+                    status_text = "перенесено на 2-ге місце в черзі"
+                else:
+                    queue.append(user_id)
+                    status_text = "залишено наступним у черзі"
+                queue.appendleft(first_in_line)
+            else:
+                queue.append(user_id)
+                status_text = "залишено наступним у черзі"
+
             try:
                 await bot.send_message(
                     user_id,
-                    "⚠️ <b>Час вийшов (25 хв)!</b>\n"
-                    "Ти не підтвердив початок перерви, тому тебе автоматично перенесено в кінець черги.",
+                    f"⚠️ <b>Час очікування вийшов (25 хв)!</b>\n"
+                    f"Ти не підтвердив початок перерви, тому тебе {status_text}.",
                     parse_mode="HTML"
                 )
             except Exception:
@@ -188,10 +205,11 @@ async def timeout_timer(user_id):
 
             await bot.send_message(
                 GROUP_CHAT_ID, 
-                f"⚠️ {get_cached_name(user_id)} не підтвердив (-ла) початок перерви за 25 хвилин.\n"
-                f"🔄 Його автоматично перенесено в кінець черги.", 
+                f"⚠️ {get_cached_name(user_id)} не підтвердив початок перерви за 25 хвилин.\n"
+                f"🔄 Його {status_text}.", 
                 parse_mode="HTML"
             )
+            
             await call_next()
             
     except asyncio.CancelledError:
@@ -247,7 +265,6 @@ async def cmd_setup_anchor(message: types.Message):
 
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
-    """Активація бота в ПП або виклик дашборду в групі"""
     if message.chat.type == "private":
         cache_user(message.from_user.id, message.from_user.first_name or "Користувач")
         await message.reply(
@@ -263,7 +280,6 @@ async def cmd_start(message: types.Message):
 
 @dp.message_handler(commands=['queue', 'dashboard'])
 async def cmd_dashboard(message: types.Message):
-    """Спускає дашборд у самий низ чату за ручною командою"""
     if message.chat.id != GROUP_CHAT_ID:
         return
         
@@ -352,7 +368,6 @@ async def swap_queue_position(message: types.Message):
 # --- ОБРОБНИКИ КНОПОК (CALLBACKS) ---
 @dp.callback_query_handler(lambda c: c.data == "summon_dashboard")
 async def cb_summon_dashboard(callback_query: types.CallbackQuery):
-    """Спрацьовує при кліку на закріплену в шапці кнопку"""
     global dashboard_msg_id
     
     if dashboard_msg_id:
@@ -364,7 +379,13 @@ async def cb_summon_dashboard(callback_query: types.CallbackQuery):
 
     text = generate_dashboard_text()
     kb = get_dashboard_kb()
-    msg = await bot.send_message(GROUP_CHAT_ID, text, reply_markup=kb, parse_mode="HTML", disable_notification=True)
+    msg = await bot.send_message(
+        GROUP_CHAT_ID, 
+        text, 
+        reply_markup=kb, 
+        parse_mode="HTML",
+        disable_notification=True
+    )
     dashboard_msg_id = msg.message_id
     
     try:
@@ -448,7 +469,7 @@ async def cb_start_break(callback_query: types.CallbackQuery):
 
     await bot.send_message(
         GROUP_CHAT_ID,
-        f"✅ {get_cached_name(user_id)} пішов(-ла) на перерву (до {break_end_time.strftime('%H:%M')}).",
+        f"✅ {get_cached_name(user_id)} пішов на перерву (до {break_end_time.strftime('%H:%M')}).",
         reply_markup=get_end_early_kb(),
         parse_mode="HTML"
     )
@@ -497,7 +518,7 @@ async def cb_end_early(callback_query: types.CallbackQuery):
 
     await bot.send_message(
         GROUP_CHAT_ID,
-        f"🏃‍♂️ {get_cached_name(user_id)} повернувся (-лась) з перерви раніше.",
+        f"🏃‍♂️ {get_cached_name(user_id)} повернувся з перерви раніше.",
         parse_mode="HTML"
     )
         
