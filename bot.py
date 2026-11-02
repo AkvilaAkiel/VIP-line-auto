@@ -172,7 +172,7 @@ async def call_next():
         await update_dashboard()
 
 async def timeout_timer(user_id):
-    """Спрацьовує через 25 хв: переносить людину на 2-ге місце або робить наступною"""
+    """Спрацьовує через 25 хв: переносить людину на 1-е місце або робить наступною"""
     try:
         await asyncio.sleep(timeout_duration)
         global pending_break_user, queue
@@ -183,8 +183,8 @@ async def timeout_timer(user_id):
             if queue:
                 first_in_line = queue.popleft()
                 if len(queue) >= 1:
-                    queue.insert(1, user_id)
-                    status_text = "перенесено на 2-ге місце в черзі"
+                    queue.insert(0, user_id)
+                    status_text = "перенесено на 1-е місце в черзі"
                 else:
                     queue.append(user_id)
                     status_text = "залишено наступним у черзі"
