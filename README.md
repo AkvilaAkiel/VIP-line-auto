@@ -1,39 +1,37 @@
-# Telegram Team Queue Coordinator Bot 🤖⏱
+# VIP-line-auto
 
-> **Note:** *This bot was developed to automate workflow and break schedules for the VIP Management team at a major logistics/e-commerce company. Sensitive data and environment variables have been redacted.*
+A Telegram bot that coordinates breaks for a support team. The queue and shared dashboard let team members see who is on break and who is next.
 
-## 📌 Overview
-In fast-paced customer support and VIP management environments, coordinating team breaks manually via chat creates "bazaar-style" chaos. This often leads to overlapping absences, missed SLAs, and unnecessary notification noise.
+## How it works
 
-**The Solution:** A Python-based, asynchronous Telegram bot that acts as a centralized break coordinator. It enforces a strict concurrency limit (only one person on break at a time), provides a real-time visual queue, and automatically manages break durations.
+- A team member joins from an inline button. If the queue is empty and nobody is on break, the bot starts a 15-minute break immediately.
+- When a break ends, the next person has 25 minutes to confirm. If that expires, the bot calls the next person in the queue.
+- Team members can leave the queue, end a break early, or swap places using `/swap @username`.
+- `/queue` opens the dashboard. `/init_pin` creates and pins its entry point when the bot has permission to pin messages.
+- `/backup` posts a JSON snapshot to the configured group. Queue state is held in memory and resets when the process restarts.
 
-## 🚀 Business Impact
-* **Workflow Optimization:** Eliminated manual schedule negotiations, drastically reducing chat "noise".
-* **Coverage Guarantee:** Ensured 100% team coverage by preventing simultaneous breaks among key personnel.
-* **Transparency:** Provided the management team with a clear, real-time overview of who is currently unavailable and who is next in line.
+## Run in a test group
 
-## ✨ Key Features
-* **⚡ Interactive UI:** Uses Telegram Inline Keyboards for seamless 1-click actions (Join Queue, Start Break).
-* **⏱ Automated Timers:** Utilizes `asyncio.sleep` to track 15-minute intervals, automatically notifying the user when their time is up and pinging the next person in line.
-* **🔄 Queue Management:** Users can dynamically cancel their breaks, leave the queue, or swap positions (`/swap @username`) without breaking the flow.
-* **📦 State Backup:** Includes a `/backup` command to export the current queue state as a JSON snippet.
-* **🔒 Access Control:** Hardcoded to respond only within the designated corporate group chat (`GROUP_CHAT_ID`), ignoring direct messages or unauthorized groups.
+Use Python 3.11 and a Telegram bot added to a dedicated test group. The bot receives updates at `/webhook`, so its server needs a publicly reachable HTTPS URL.
 
-## 🛠 Tech Stack
-* **Language:** Python 3.11
-* **Framework:** `aiogram` 2.x (Asynchronous Telegram Bot API)
-* **Web Server:** `aiohttp` (for handling Webhooks)
-* **Deployment:** Render (PaaS) via Webhooks (`render.yaml` included)
+```sh
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python bot.py
+```
 
-## 🏗 Architecture & Design Decisions
-* **Webhooks over Polling:** To deploy efficiently on Render's free tier and ensure instant response times, the bot uses Webhooks instead of long-polling.
-* **In-Memory State:** The queue uses Python's `collections.deque` for O(1) appends and pops. *Note: Since this is deployed on a stateless container, queue data resides in RAM. For a more robust V2, state could be externalized to Redis or SQLite.*
+Set the following environment variables before starting the bot.
 
-## ⚙️ Setup & Deployment
-1. Clone the repository.
-2. Install dependencies: `pip install -r requirements.txt`
-3. Set up environment variables:
-   * `API_TOKEN` - Telegram Bot Token
-   * `GROUP_CHAT_ID` - The specific Chat ID where the bot is allowed to operate
-   * `WEBHOOK_HOST` - Your server URL (e.g., `https://your-app.onrender.com`)
-4. Run the application: `python bot.py`
+| Variable | Purpose |
+| --- | --- |
+| `API_TOKEN` | Telegram bot token |
+| `GROUP_CHAT_ID` | Numeric ID of the test group |
+| `WEBHOOK_HOST` | Public HTTPS origin without a trailing slash |
+| `PORT` | HTTP listen port. The application defaults to `10000` |
+
+The repository includes a [Render blueprint](render.yaml). Set `GROUP_CHAT_ID` in the Render service environment as well as the token and webhook origin. The blueprint sets `PORT=8000`.
+
+## Implementation
+
+[bot.py](bot.py) uses aiogram 2.x, aiohttp, a Python deque, and asyncio timers. The current webhook does not verify a Telegram webhook secret. Use the current version as a portfolio demonstration in a dedicated test environment.
